@@ -421,6 +421,18 @@ def generate_detailed_reasons(G, user_id, top_contributions):
 
 # ---------- 替换：generate_prompts 中调用部分（切换为传递 top_contributions 而非 top_features） ----------
 #def generate_prompts(df_features, feature_weights, G):
+def remove_duplicates_dict_list(lst):
+    seen = set()
+    result = []
+    for d in lst:
+        # 将字典转换为可哈希的元组
+        dict_tuple = tuple(sorted(d.items()))
+        if dict_tuple not in seen:
+            seen.add(dict_tuple)
+            result.append(d)
+    return result
+
+
 def generate_prompts(features_file="features.csv",
                          feature_weights_file="feature_weights.json",
                          graph_file="community_graph.gpickle",
@@ -430,10 +442,20 @@ def generate_prompts(features_file="features.csv",
                             k=3):
     """生成大模型Prompt格式（已修改：传递 top_contributions）"""
 
+    add_desc_dict = {
+        'high_risk_contacts': "高风险联系人",
+        'high_risk_community': "高风险社区成员",
+        'pagerank': "社交网络中心位置",
+        'in_degree': "被叫集中度",
+        'out_degree': "主叫集中度",
+        'avg_calls': "平均通话频次"
+    }
+    cols_dict.update(add_desc_dict)
+
     df_features = pd.read_csv(features_file, index_col=0)
     with open(feature_weights_file, "r", encoding="utf-8") as f:
         feature_weights = json.load(f)
-    with open(graph_file, "r", encoding="utf-8") as f:
+    with open(graph_file, "rb") as f:
         G = pickle.load(f)
     prompts = []
     feature_descriptions = get_feature_descriptions()
@@ -454,10 +476,11 @@ def generate_prompts(features_file="features.csv",
             if feature not in row:
                 continue
 
+            feature_desc_str = cols_dict.get(feature)
             feature_value = row[feature]
             contribution = feature_value * weight
             contributions.append({
-                'feature': feature,
+                'feature': feature_desc_str,
                 'contribution': contribution
             })
 
@@ -469,13 +492,15 @@ def generate_prompts(features_file="features.csv",
 
         # 生成详细原因分析（现在接收 top_contributions）
         detailed_reasons = generate_detailed_reasons(G, user_id, top_contributions)
-        reason_dict[user_id] = list(set(detailed_reasons))
+        detailed_reasons = remove_duplicates_dict_list(detailed_reasons)
+        reason_dict[user_id] = detailed_reasons
         # 生成防御建议
         #defense_suggestions = generate_defense_suggestions(detailed_reasons)
 
         # 生成证据链（现在接收 top_contributions）
         evidence_path = generate_evidence_path(G, user_id, top_contributions)
-        evidence_dict[user_id] = list(set(evidence_path))
+        evidence_path = remove_duplicates_dict_list(evidence_path)
+        evidence_dict[user_id] = evidence_path
         # 确定风险等级（保持原逻辑）
         if risk_score > 0.8:
             risk_level = "极高风险"
@@ -494,7 +519,7 @@ def generate_prompts(features_file="features.csv",
             risk_description = "当前未发现明显欺诈特征"
 
         # 构建输入特征字典（排除标签）
-        input_features = {k: v for k, v in row.items() if k != 'label'}
+        input_features = {cols_dict.get(k): v for k, v in row.items() if k != 'label'}
 
         # 构建contributing_factors字段（保留原有输出格式）
         contributing_factors = [
