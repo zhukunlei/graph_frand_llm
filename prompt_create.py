@@ -578,19 +578,6 @@ def build_pyg_data_from_nx(subgraph):
     x = torch.eye(len(node_map))  # One-hot encoding
     return Data(x=x, edge_index=edge_index), node_map
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 # 主函数
 def main(data_path='data.txt'):
     # 1. 构建图谱
